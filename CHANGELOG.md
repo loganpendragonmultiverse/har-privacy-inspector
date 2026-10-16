@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0 - 2026-10-16
+
+- Add an explicit URL-free strict snapshot while preserving standard export and the existing strict URL behavior by default.
+- Add synthetic regression coverage and packaged development/testing documentation.
+
 ## 1.1.0 - 2026-09-07
 
 - Sanitize URL credentials, fragments, redirects and URL-bearing headers; add a strict structural export and protect all source/output paths.

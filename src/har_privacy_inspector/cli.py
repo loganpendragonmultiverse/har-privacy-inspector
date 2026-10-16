@@ -39,6 +39,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--audit", type=Path)
     parser.add_argument("--sanitized", type=Path)
     parser.add_argument("--strict", action="store_true", help="Export only allowlisted structure")
+    parser.add_argument(
+        "--strict-url-mode",
+        choices=("sanitized", "omit"),
+        default="sanitized",
+        help="With --strict, omit URLs entirely when set to omit",
+    )
     parser.add_argument("--format", choices=("json", "markdown"), default="markdown")
     args = parser.parse_args(argv)
     if not args.har.is_file():
@@ -49,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
     if any(path.exists() for path in outputs):
         parser.error("output already exists; choose a new output path")
     try:
-        report, sanitized = inspect_and_sanitize(args.har, strict=args.strict)
+        report, sanitized = inspect_and_sanitize(
+            args.har, strict=args.strict, strict_url_mode=args.strict_url_mode
+        )
     except (OSError, ValueError, TypeError) as exc:
         parser.error(str(exc))
     rendered = json.dumps(report, indent=2) if args.format == "json" else _markdown(report)

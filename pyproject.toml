@@ -3,7 +3,7 @@ requires = ["setuptools>=78", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "har-privacy-inspector"
-version = "1.1.0"
+version = "1.2.0"
 description = "Inspect and sanitize HAR network captures locally before sharing."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,3 +27,6 @@ omit = ["src/*/__main__.py"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=har_privacy_inspector --cov-branch --cov-report=term-missing --cov-fail-under=90"
+
+[tool.setuptools.data-files]
+"share/doc/har-privacy-inspector" = ["README.md", "CHANGELOG.md", "DEVELOPMENT.md", "TESTING.md", "LICENSE"]
