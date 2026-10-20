@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .validation import read_har
+
 SENSITIVE_HEADERS = {
     "authorization",
     "cookie",
@@ -69,7 +71,7 @@ def _strict_export(sanitized: dict[str, Any], *, omit_urls: bool = False) -> dic
     return {
         "log": {
             "version": "1.2",
-            "creator": {"name": "HAR Privacy Inspector", "version": "1.2.0"},
+            "creator": {"name": "HAR Privacy Inspector", "version": "1.2.1"},
             "entries": entries,
         }
     }
@@ -113,6 +115,7 @@ def _redact_request(request: dict[str, Any], counts: Counter[str]) -> None:
         item = _mapping(raw)
         if "value" in item:
             item["value"] = REDACTED
+            counts["query-field"] += 1
     post = _mapping(request.get("postData"))
     if "text" in post:
         post["text"] = REDACTED
@@ -121,6 +124,7 @@ def _redact_request(request: dict[str, Any], counts: Counter[str]) -> None:
         item = _mapping(raw)
         if "value" in item:
             item["value"] = REDACTED
+            counts["form-value"] += 1
 
 
 def _redact_response(response: dict[str, Any], counts: Counter[str]) -> None:
@@ -141,11 +145,8 @@ def inspect_and_sanitize(
         raise ValueError("strict-url-mode must be sanitized or omit")
     if strict_url_mode == "omit" and not strict:
         raise ValueError("strict-url-mode omit requires strict mode")
-    raw = path.read_bytes()
-    loaded = json.loads(raw)
-    if not isinstance(loaded, dict) or not isinstance(_mapping(loaded).get("log"), dict):
-        raise TypeError("HAR root must contain a log object")
-    sanitized = copy.deepcopy(cast(dict[str, Any], loaded))
+    raw, loaded = read_har(path)
+    sanitized = copy.deepcopy(loaded)
     entries = _sequence(_mapping(sanitized["log"]).get("entries"))
     counts: Counter[str] = Counter()
     page_sites: set[str] = set()
