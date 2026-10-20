@@ -47,13 +47,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--format", choices=("json", "markdown"), default="markdown")
     args = parser.parse_args(argv)
-    if not args.har.is_file():
-        parser.error("HAR file does not exist")
-    outputs = [path.resolve() for path in (args.audit, args.sanitized) if path]
-    if args.har.resolve() in outputs or len(set(outputs)) != len(outputs):
-        parser.error("output paths must differ from the source and each other")
-    if any(path.exists() for path in outputs):
-        parser.error("output already exists; choose a new output path")
+    try:
+        if not args.har.is_file():
+            parser.error("HAR file does not exist")
+        requested = [path for path in (args.audit, args.sanitized) if path]
+        # Check final links before resolve(): a self-link can make resolve raise.
+        if any(path.is_symlink() for path in requested):
+            parser.error("output already exists; choose a new output path")
+        outputs = [path.resolve() for path in requested]
+        if args.har.resolve() in outputs or len(set(outputs)) != len(outputs):
+            parser.error("output paths must differ from the source and each other")
+        if any(path.exists() for path in requested):
+            parser.error("output already exists; choose a new output path")
+    except (OSError, RuntimeError) as exc:
+        parser.error(f"cannot resolve input/output paths: {exc}")
     try:
         report, sanitized = inspect_and_sanitize(
             args.har, strict=args.strict, strict_url_mode=args.strict_url_mode
@@ -61,10 +68,15 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, TypeError) as exc:
         parser.error(str(exc))
     rendered = json.dumps(report, indent=2) if args.format == "json" else _markdown(report)
-    if args.audit:
-        args.audit.write_text(rendered + "\n", encoding="utf-8")
-    else:
-        print(rendered)
-    if args.sanitized:
-        args.sanitized.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
+    try:
+        if args.audit:
+            with args.audit.open("x", encoding="utf-8") as handle:
+                handle.write(rendered + "\n")
+        else:
+            print(rendered)
+        if args.sanitized:
+            with args.sanitized.open("x", encoding="utf-8") as handle:
+                handle.write(json.dumps(sanitized, indent=2) + "\n")
+    except OSError as exc:
+        parser.error(str(exc))
     return 0

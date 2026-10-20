@@ -20,7 +20,7 @@ har-privacy-inspector capture.har --format json --audit audit.json
 - The source HAR is never modified, and an identical output path is rejected.
 - No network access, upload, telemetry, account, or browser integration is used.
 
-Python 3.10+ on Windows, macOS, and Linux. Current release: **v1.2.0**. Pull requests are reviewed. MIT licensed.
+Python 3.10+ on Windows, macOS, and Linux. Current release: **v1.2.1**. Pull requests are reviewed. MIT licensed.
 
 ## Version 1.1.0: reviewed improvements
 
@@ -38,3 +38,17 @@ har-privacy-inspector capture.har --strict --audit audit.json --format json --sa
 Add an explicit URL-free strict snapshot while preserving standard export and the existing strict URL behavior by default.
 
 Use `har-privacy-inspector capture.har --strict --strict-url-mode omit --audit audit.json --format json --sanitized snapshot.json`. The new snapshot omits request URLs entirely and retains generated `_entryId` values in original entry order plus integer response `status`, `headersSize` and `bodySize` fields. Redirects, headers, bodies, names and extension fields are omitted through the strict allowlist. `--strict-url-mode sanitized` remains the default; `omit` requires `--strict`. Snapshot entry counts, order and numeric response fields can still be sensitive. Audit reports retain the source filename and fingerprints, and output filenames can reveal context. Review both files and their names before sharing: this is not a universal safe-to-share guarantee or a replayable full HAR.
+
+## 1.2.1: bounded validation and output safety
+
+Malformed entry and sanitization containers now fail explicitly instead of becoming an empty success. Input is limited to 50,000,000 bytes, 50,000 entries, 100 JSON container levels and 1,000,000 JSON values. Duplicate keys and non-finite JSON numbers are rejected; unsupported extension fields remain preserved in standard mode and omitted by the strict allowlist. These are resource/shape bounds, not complete HAR schema or anonymization certification.
+
+Existing outputs, including dangling links, are refused. Exclusive creation also preserves a regular file created after the initial check. This protects against accidental overwrites, not hostile concurrent filesystem changes. Outputs are separate files, not an atomic pair: an earlier completed output can remain if a later write fails. Source bytes remain unchanged. The audit's sanitized hash fingerprints canonical JSON, not the whitespace of the written file. Query-string fields and form values now have their own redaction counts.
+
+Try the bundled synthetic example without real traffic:
+
+```sh
+har-privacy-inspector examples/synthetic.har --strict --strict-url-mode omit --format json --audit example-audit.json --sanitized example-snapshot.json
+```
+
+Fresh Python distributions include this sample under `share/doc/har-privacy-inspector/examples` and the four authority documents under `share/doc/har-privacy-inspector` in the installation prefix.
