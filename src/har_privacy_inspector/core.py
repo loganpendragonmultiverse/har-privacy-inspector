@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .validation import read_har
+
 SENSITIVE_HEADERS = {
     "authorization",
     "cookie",
@@ -45,10 +47,10 @@ def sanitize_url(value: str, counts: Counter[str]) -> str:
         return REDACTED
 
 
-def _strict_export(sanitized: dict[str, Any]) -> dict[str, Any]:
+def _strict_export(sanitized: dict[str, Any], *, omit_urls: bool = False) -> dict[str, Any]:
     """Build a minimal structural HAR; never copy arbitrary extension objects."""
     entries = []
-    for raw in _sequence(_mapping(sanitized.get("log")).get("entries")):
+    for index, raw in enumerate(_sequence(_mapping(sanitized.get("log")).get("entries")), start=1):
         entry = _mapping(raw)
         request = _mapping(entry.get("request"))
         response = _mapping(entry.get("response"))
@@ -58,6 +60,9 @@ def _strict_export(sanitized: dict[str, Any]) -> dict[str, Any]:
             "request": {"url": request.get("url", "")},
             "response": {},
         }
+        if omit_urls:
+            clean.pop("request")
+            clean["_entryId"] = f"entry-{index:06d}"
         for key in ("status", "headersSize", "bodySize"):
             value = response.get(key)
             if isinstance(value, int) and not isinstance(value, bool):
@@ -66,7 +71,7 @@ def _strict_export(sanitized: dict[str, Any]) -> dict[str, Any]:
     return {
         "log": {
             "version": "1.2",
-            "creator": {"name": "HAR Privacy Inspector", "version": "1.1.0"},
+            "creator": {"name": "HAR Privacy Inspector", "version": "1.2.1"},
             "entries": entries,
         }
     }
@@ -110,6 +115,7 @@ def _redact_request(request: dict[str, Any], counts: Counter[str]) -> None:
         item = _mapping(raw)
         if "value" in item:
             item["value"] = REDACTED
+            counts["query-field"] += 1
     post = _mapping(request.get("postData"))
     if "text" in post:
         post["text"] = REDACTED
@@ -118,6 +124,7 @@ def _redact_request(request: dict[str, Any], counts: Counter[str]) -> None:
         item = _mapping(raw)
         if "value" in item:
             item["value"] = REDACTED
+            counts["form-value"] += 1
 
 
 def _redact_response(response: dict[str, Any], counts: Counter[str]) -> None:
@@ -132,13 +139,14 @@ def _redact_response(response: dict[str, Any], counts: Counter[str]) -> None:
 
 
 def inspect_and_sanitize(
-    path: Path, *, strict: bool = False
+    path: Path, *, strict: bool = False, strict_url_mode: str = "sanitized"
 ) -> tuple[dict[str, object], dict[str, Any]]:
-    raw = path.read_bytes()
-    loaded = json.loads(raw)
-    if not isinstance(loaded, dict) or not isinstance(_mapping(loaded).get("log"), dict):
-        raise TypeError("HAR root must contain a log object")
-    sanitized = copy.deepcopy(cast(dict[str, Any], loaded))
+    if strict_url_mode not in ("sanitized", "omit"):
+        raise ValueError("strict-url-mode must be sanitized or omit")
+    if strict_url_mode == "omit" and not strict:
+        raise ValueError("strict-url-mode omit requires strict mode")
+    raw, loaded = read_har(path)
+    sanitized = copy.deepcopy(loaded)
     entries = _sequence(_mapping(sanitized["log"]).get("entries"))
     counts: Counter[str] = Counter()
     page_sites: set[str] = set()
@@ -155,13 +163,23 @@ def inspect_and_sanitize(
         _redact_request(request, counts)
         _redact_response(_mapping(_mapping(raw_entry).get("response")), counts)
     if strict:
-        sanitized = _strict_export(sanitized)
+        sanitized = _strict_export(sanitized, omit_urls=strict_url_mode == "omit")
     findings = [{"code": code, "count": count} for code, count in sorted(counts.items()) if count]
     report: dict[str, object] = {
         "schemaVersion": 1,
-        "exportMode": "strict" if strict else "standard",
+        "exportMode": "strict-url-free"
+        if strict and strict_url_mode == "omit"
+        else "strict"
+        if strict
+        else "standard",
         "retainedFields": (
-            ["sanitized request URL", "numeric response status and sizes", "generated creator"]
+            [
+                "generated entry identity and order",
+                "numeric response status and sizes",
+                "generated creator",
+            ]
+            if strict_url_mode == "omit"
+            else ["sanitized request URL", "numeric response status and sizes", "generated creator"]
             if strict
             else ["original structure with recognized sensitive values redacted"]
         ),
